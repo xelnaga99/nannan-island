@@ -1,0 +1,42 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "players": {
+      ".read": true,
+      "$id": {
+        ".write": true,
+        ".validate": "$id.length <= 24 && newData.hasChildren(['n', 'a', 'v'])",
+        "n": { ".validate": "newData.isString() && newData.val().length <= 12" },
+        "a": { ".validate": "newData.isString() && newData.val().length <= 48" },
+        "v": { ".validate": "newData.isNumber() && (newData.val() == 0 || newData.val() == 1)" },
+        "x": { ".validate": "newData.isNumber() && newData.val() > -80 && newData.val() < 80" },
+        "z": { ".validate": "newData.isNumber() && newData.val() > -80 && newData.val() < 80" },
+        "r": { ".validate": "newData.isNumber() && newData.val() > -10 && newData.val() < 10" },
+        "e": {
+          ".validate": "newData.hasChildren(['k', 'ts'])",
+          "k": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 4" },
+          "ts": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+        "$other": { ".validate": false }
+      }
+    },
+    "rps": {
+      ".read": true,
+      "$mid": {
+        ".write": true,
+        ".validate": "$mid.length <= 24 && newData.hasChildren(['a', 'b', 'st'])",
+        "a": { ".validate": "newData.isString() && newData.val().length <= 24" },
+        "b": { ".validate": "newData.isString() && newData.val().length <= 24" },
+        "an": { ".validate": "newData.isString() && newData.val().length <= 12" },
+        "bn": { ".validate": "newData.isString() && newData.val().length <= 12" },
+        "st": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2" },
+        "ma": { ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 2" },
+        "mb": { ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 2" },
+        "rd": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 1000" },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

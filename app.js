@@ -2938,14 +2938,14 @@ var CFG = window.NANNAN_CONFIG || {};
   function renderPicker() {
     var open = schoolOpen() || !!pick.rush;
     rpEls.note.className = "rp-note" + (open ? "" : " warn");
-    rpEls.note.textContent = open ? "選角色後，他會自己走完一天的行程；只有上學時間（6:30–16:00）可以選，放學後不能選。" : "現在是放學後（或還沒開校門），無法選擇角色。";
+    rpEls.note.textContent = open ? "選角色後，他會自己走完一天的行程；只有上學時間（6:30–16:00）可以選，放學後不能選。" : "現在是放學後（或還沒開校門），一般角色不能選，但可以用「自創島民」隨時進島。";
     rpEls.skip.hidden = open;
     rpEls.grid.innerHTML = "";
     ROLES.filter(function (r) { return !pick.rush || RUSH_OK.indexOf(r.id) >= 0; }).forEach(function (r) {
       var b = document.createElement("button");
       b.type = "button";
       b.className = "rp-role" + (pick.role === r ? " sel" : "");
-      b.disabled = !open;
+      b.disabled = !open && !r.free;
       b.innerHTML = '<b><i style="background:' + r.color + '"></i>' + r.name + "</b><span>" + r.sub + "</span>";
       b.addEventListener("click", function () {
         pick.role = r; pick.v = r.variants ? r.variants[0].k : null; pick.sex = "m";
@@ -2973,8 +2973,9 @@ var CFG = window.NANNAN_CONFIG || {};
       }
       if (r.variants) chipRow("項目", r.variants, pick.v, function (k) { pick.v = k; });
       if (r.sexes) chipRow("性別", ROLE_SEX, pick.sex, function (k) { pick.sex = k; });
+      if (r.free) renderCreator(chipRow);
     }
-    rpEls.go.disabled = !(open && pick.role);
+    rpEls.go.disabled = !((open || (pick.role && pick.role.free)) && pick.role);
   }
   function openPicker(rushMode) {
     pick.rush = !!rushMode;
@@ -2985,7 +2986,7 @@ var CFG = window.NANNAN_CONFIG || {};
   document.getElementById("btn-role").addEventListener("click", function () { openPicker(false); });
   rpEls.close.addEventListener("click", function () { rpEls.wrap.hidden = true; });
   rpEls.skip.addEventListener("click", function () { timeOfDay = 7.5; applyTime(timeOfDay); renderPicker(); });
-  rpEls.go.addEventListener("click", function () { if (!pick.role) return; if (pick.rush) startRush(pick.role, pick.v, pick.sex); else if (schoolOpen()) startRole(pick.role, pick.v, pick.sex); });
+  rpEls.go.addEventListener("click", function () { if (!pick.role) return; if (pick.rush) startRush(pick.role, pick.v, pick.sex); else if (schoolOpen() || pick.role.free) startRole(pick.role, pick.v, pick.sex); });
 
   function startRole(r, v, sex) {
     rpEls.wrap.hidden = true;
@@ -2996,6 +2997,7 @@ var CFG = window.NANNAN_CONFIG || {};
     roleDeco(player, cfg.deco);
     artApply(player.root);
     role = r;
+    roleOpt = { v: v || "", sex: sex || "m" };
     roleMode = true; roleFP = false;
     document.body.classList.add("role-mode");
     gsap.killTweensOf(controls.target);
@@ -3015,6 +3017,7 @@ var CFG = window.NANNAN_CONFIG || {};
     rhEls.name.textContent = r.name + (v ? "（" + (r.variants.filter(function (o) { return o.k === v; })[0].l) + "）" : "");
     rhEls.view.textContent = "第一人稱";
     rhEls.auto.textContent = "自己操控";
+    if (r.free) { rhEls.name.textContent = avNick(); rhEls.auto.hidden = true; }
     rhEls.wrap.hidden = false;
     document.getElementById("rolekeys").hidden = false;
     document.getElementById("joy").hidden = false;
@@ -3024,6 +3027,7 @@ var CFG = window.NANNAN_CONFIG || {};
     if (!role) return;
     if (rush) { rush = null; if (rushSaved) { timeSpeed = rushSaved; timeEls.speed.textContent = rushSaved + "×"; rushSaved = null; } rhEls.auto.hidden = false; }
     scene.remove(player.root);
+    rhEls.auto.hidden = false;
     roleApi.students.forEach(function (a) { a.suppress = false; });
     role = null; player = null; playerPos = null; roleMode = false; roleFP = false; nearHot = null;
     document.body.classList.remove("role-mode");
@@ -3122,6 +3126,15 @@ var CFG = window.NANNAN_CONFIG || {};
   };
   function initAuto(r, v, sex) {
     var A = roleApi;
+    if (r.free) {
+      mkPlaces();
+      AG = { S: {}, x: -1.2, z: 7.7, pts: [], seg: 0, d: 0, sp: 0.8, hx: 0, hz: 1, phase: 0, place: null, until: 0, state: "done", leaving: false, act: null, side: 1 };
+      autoMode = false; carSave = null;
+      player.root.visible = true;
+      focusX = -1.2; focusZ = 7.7;
+      playerPos = { x: -1.2, z: 7.7 };
+      return;
+    }
     mkPlaces();
     var S = {}, base = SCHED[r.id];
     for (var k in base) S[k] = base[k];
@@ -3350,7 +3363,7 @@ var CFG = window.NANNAN_CONFIG || {};
   function updateRole(dt, now) {
     if (!role) return;
     var hr = timeOfDay;
-    if (hr >= 18.0 || hr < 6.0) { endRole("校門關了，今天的行程結束。"); return; }
+    if (!role.free && (hr >= 18.0 || hr < 6.0)) { endRole("校門關了，今天的行程結束。"); return; }
     var sdt = timePlaying ? Math.min(dt, 0.1) * timeSpeed : 0;
     dt = Math.min(dt, 0.1);
     var m = player, A = roleApi, car = A.cars[0], S = AG.S, status = "", moving = false, amp = 0.6, vis = true;
@@ -3386,9 +3399,9 @@ var CFG = window.NANNAN_CONFIG || {};
       }
       if (rush) { var hit = rushStep(dt, px, pz); if (hit) { px = hit[0]; pz = hit[1]; } }
       playerPos.x = px; playerPos.z = pz; AG.x = px; AG.z = pz;
-      status = rush ? rushStatus() : "手動操控中（按「回到行程」讓他自己走）";
+      status = rush ? rushStatus() : role.free ? onlineStatus() : "手動操控中（按「回到行程」讓他自己走）";
       AG.dest = null;
-      if (hr >= 17.5) { endRole("下課了，今天的行程結束。"); return; }
+      if (hr >= 17.5 && !role.free) { endRole("下課了，今天的行程結束。"); return; }
     } else {
       // ---- 自動行程 ----
       if (keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD || Math.hypot(joy.x, joy.y) > 0.25) manualToggle();
@@ -4282,6 +4295,415 @@ var CFG = window.NANNAN_CONFIG || {};
     load();
   })();
 
+  // ---------- 24. 連線：島上人數、其他島民、猜拳與表情（需要 config.js 的 firebase 設定） ----------
+  var EMOTES = ["👋", "❤️", "😄", "⭐", "👍"];
+  var RPS_ICON = ["✊", "✌️", "✋"];
+  var NET = { on: false, db: null, id: null, ref: null, players: {}, meshes: {}, lastSend: 0, sent: "", selfEl: null, selfBubUntil: 0, near: null, nearId: null };
+  var roleOpt = { v: "", sex: "m" };
+
+  // 暱稱過濾：只留文字與數字，最多 8 字，不雅字詞改用預設名稱
+  var BAD_WORDS = ["幹你", "幹妳", "幹他", "操你", "操妳", "靠北", "靠杯", "雞掰", "機掰", "雞巴", "三小", "他媽", "你媽", "妳媽", "媽的", "白痴", "白癡", "智障", "腦殘", "去死", "死全家", "強姦", "強暴", "做愛", "色情", "性愛", "幹嘛幹", "fuck", "shit", "bitch", "dick", "cunt", "porn", "sex", "nazi", "rape", "nigg", "slut", "asshole"];
+  function cleanName(s, fallback) {
+    s = String(s == null ? "" : s).replace(/[^一-鿿A-Za-z0-9_\- ]/g, "").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+    s = Array.from(s).slice(0, 8).join("");
+    var low = s.toLowerCase().replace(/[\s_\-]/g, "");
+    for (var i = 0; i < BAD_WORDS.length; i++) if (low.indexOf(BAD_WORDS[i]) >= 0) return fallback || "";
+    return s || fallback || "";
+  }
+  var guestName = "島民" + (100 + Math.floor(Math.random() * 900));
+
+  // 自創角色：全部用選項組合，不開放自由輸入文字或圖片
+  var H_STYLES = [["side", "短髮"], ["spiky", "刺蝟頭"], ["bun", "丸子頭"], ["wavy", "波浪"], ["bob", "鮑伯頭"], ["longwavy", "長捲髮"], ["longstraight", "長直髮"], ["bowl", "蘑菇頭"], ["wavymid", "中長捲"]];
+  var H_COLORS = [0x1b1e2a, 0x4a3020, 0x6b4a2b, 0xb06a3b, 0xe6c36b, 0xe8a9b0, 0xe9ecf2, 0x3d8fe0, 0x7c5cf0, 0x16a085];
+  var SKINS = [0xf8dcc4, 0xf6d3b3, 0xe9b88f, 0xe4b48c, 0xc98f63, 0x8d5a3b];
+  var FITS = [["school", "楠中校服"], ["pe", "運動服"], ["casual", "便服"]];
+  var TOPS = [0xf8f8fb, 0xe0443a, 0xf2c230, 0x3d8fdc, 0x1f9e55, 0xe8a9b0, 0x7c5cf0, 0xe67e22, 0x2b2d3a, 0xa6c6e4];
+  var BOTTOMS = [0x28336a, 0x1b1b22, 0x55575c, 0xa6c6e4, 0x7a1f2b, 0x2f3a55, 0xc9bda5, 0x3a6b4a];
+  var ACCS = [["none", "無配件"], ["glasses", "眼鏡"], ["headphones", "耳機"], ["chef", "廚師帽"], ["helmet", "安全帽"], ["headband", "頭巾"], ["tie", "領帶"], ["bag", "書包"]];
+  var AV_LIM = { hs: H_STYLES.length, hc: H_COLORS.length, sk: SKINS.length, fit: FITS.length, tc: TOPS.length, bc: BOTTOMS.length, acc: ACCS.length };
+  var AV = { sex: "m", hs: 0, hc: 0, sk: 1, fit: 0, tc: 1, bc: 0, acc: 0, nick: "" };
+  (function () {
+    try {
+      var s = JSON.parse(localStorage.getItem("nannan-avatar") || "null");
+      if (s) { for (var k in AV_LIM) if (typeof s[k] === "number" && s[k] >= 0 && s[k] < AV_LIM[k]) AV[k] = s[k] | 0; if (s.sex === "f") AV.sex = "f"; AV.nick = cleanName(s.nick, ""); }
+    } catch (e) {}
+  })();
+  function saveAV() { try { localStorage.setItem("nannan-avatar", JSON.stringify(AV)); } catch (e) {} }
+  function avNick() { return cleanName(AV.nick, guestName); }
+  function encodeAV(a) { return "c:" + [a.sex === "f" ? 1 : 0, a.hs, a.hc, a.sk, a.fit, a.tc, a.bc, a.acc].join(","); }
+  function customCfg(a) {
+    var f = a.sex === "f", c = roleApi.variant(f ? (a.fit === 1 ? 9 : 5) : (a.fit === 1 ? 8 : 2)), d = {};
+    c.prop = null;
+    c.hairStyle = H_STYLES[a.hs][0]; c.hair = H_COLORS[a.hc]; c.skin = SKINS[a.sk];
+    if (a.fit === 1) { c.topColor = TOPS[a.tc]; c.bottomColor = BOTTOMS[a.bc]; c.noEmblem = true; }
+    else if (a.fit === 2) { c.noEmblem = true; c.topColor = TOPS[a.tc]; c.bottomColor = BOTTOMS[a.bc]; c.skirtColor = BOTTOMS[a.bc]; c.shoe = "sneaker"; c.longSleeve = false; }
+    var acc = ACCS[a.acc][0];
+    if (acc === "glasses") d.glasses = true;
+    else if (acc === "headphones") d.headphones = 0x39c0b0;
+    else if (acc === "chef") d.chefHat = true;
+    else if (acc === "helmet") d.helmet = 0xe0443a;
+    else if (acc === "headband") d.headband = 0xffffff;
+    else if (acc === "tie") d.tie = 0x7a1f2b;
+    else if (acc === "bag") c.prop = "bag";
+    return { c: c, deco: d };
+  }
+  // 把別人傳來的代碼還原成外觀；格式不對就回傳 null
+  function buildAvatar(code) {
+    var p = String(code || "").split(":"), i;
+    if (p[0] === "c" && p[1]) {
+      var n = p[1].split(",");
+      if (n.length !== 8) return null;
+      var a = { sex: n[0] === "1" ? "f" : "m" }, keys = ["hs", "hc", "sk", "fit", "tc", "bc", "acc"];
+      for (i = 0; i < keys.length; i++) {
+        var q = parseInt(n[i + 1], 10);
+        if (!(q >= 0 && q < AV_LIM[keys[i]])) return null;
+        a[keys[i]] = q;
+      }
+      return customCfg(a);
+    }
+    if (p[0] === "r") {
+      var r = ROLES.filter(function (x) { return x.id === p[1] && !x.free; })[0];
+      if (!r) return null;
+      var v = null;
+      if (r.variants) { v = r.variants.some(function (o) { return o.k === p[2]; }) ? p[2] : r.variants[0].k; }
+      return r.make(v, p[3] === "f" ? "f" : "m");
+    }
+    return null;
+  }
+
+  ROLES.unshift({ id: "custom", name: "自創島民", sub: "自己捏角色，隨時進島、遇見其他玩家", color: "#e0703f", hot: null, free: true,
+    make: function () { return customCfg(AV); } });
+
+  // ----- 捏角色畫面（含 3D 預覽） -----
+  var PV = null;
+  function pvInit() {
+    if (PV !== null) return PV;
+    try {
+      var cv = document.createElement("canvas");
+      cv.className = "rp-pv";
+      var rn = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+      rn.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      rn.setSize(150, 180);
+      var sc = new THREE.Scene();
+      sc.add(new THREE.HemisphereLight(0xffffff, 0xc8c8d0, 1.0));
+      var dl = new THREE.DirectionalLight(0xffffff, 0.9); dl.position.set(2, 3, 3); sc.add(dl);
+      var cam = new THREE.PerspectiveCamera(30, 150 / 180, 0.1, 20);
+      cam.position.set(0, 0.42, 2.1); cam.lookAt(0, 0.36, 0);
+      PV = { cv: cv, rn: rn, sc: sc, cam: cam, model: null, raf: 0 };
+    } catch (e) { PV = false; }
+    return PV;
+  }
+  function pvRefresh() {
+    if (!pvInit()) return;
+    try {
+      if (PV.model) PV.sc.remove(PV.model.root);
+      var cfg = customCfg(AV), m = roleApi.makeStudent(cfg.c);
+      scene.remove(m.root);
+      roleDeco(m, cfg.deco);
+      m.root.position.set(0, 0, 0);
+      PV.sc.add(m.root);
+      PV.model = m;
+      if (!PV.raf) PV.raf = requestAnimationFrame(pvLoop);
+    } catch (e) { console.warn("preview", e); }
+  }
+  function pvLoop() {
+    if (!PV || rpEls.wrap.hidden || !pick.role || !pick.role.free) { if (PV) PV.raf = 0; return; }
+    PV.model.root.rotation.y += 0.012;
+    PV.rn.render(PV.sc, PV.cam);
+    PV.raf = requestAnimationFrame(pvLoop);
+  }
+  function renderCreator(chipRow) {
+    var box = rpEls.opts;
+    if (pvInit()) { var wrap = document.createElement("div"); wrap.className = "rp-pvwrap"; wrap.appendChild(PV.cv); box.appendChild(wrap); }
+    function idxRow(label, list, key) {
+      chipRow(label, list.map(function (o, i) { return { k: i, l: o[1] }; }), AV[key], function (k) { AV[key] = k; saveAV(); });
+    }
+    function swatchRow(label, colors, key) {
+      var row = document.createElement("div");
+      row.className = "rp-row";
+      row.innerHTML = "<em>" + label + "</em>";
+      colors.forEach(function (col, i) {
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "rp-sw" + (AV[key] === i ? " sel" : ""); b.style.background = "#" + ("000000" + col.toString(16)).slice(-6);
+        b.setAttribute("aria-label", label + (i + 1));
+        b.addEventListener("click", function () { AV[key] = i; saveAV(); renderPicker(); });
+        row.appendChild(b);
+      });
+      box.appendChild(row);
+    }
+    var nr = document.createElement("div");
+    nr.className = "rp-row";
+    nr.innerHTML = "<em>暱稱</em>";
+    var inp = document.createElement("input");
+    inp.type = "text"; inp.maxLength = 8; inp.className = "rp-nick"; inp.placeholder = "最多 8 個字（留空會給你島民編號）"; inp.value = AV.nick;
+    inp.addEventListener("input", function () { AV.nick = inp.value; saveAV(); });
+    nr.appendChild(inp);
+    box.appendChild(nr);
+    chipRow("性別", ROLE_SEX, AV.sex, function (k) { AV.sex = k; saveAV(); });
+    idxRow("髮型", H_STYLES, "hs");
+    swatchRow("髮色", H_COLORS, "hc");
+    swatchRow("膚色", SKINS, "sk");
+    idxRow("服裝", FITS, "fit");
+    if (AV.fit !== 0) { swatchRow("上衣", TOPS, "tc"); swatchRow("下身", BOTTOMS, "bc"); }
+    idxRow("配件", ACCS, "acc");
+    var tip = document.createElement("div");
+    tip.className = "rp-row rp-tip";
+    tip.textContent = NET.on ? "進島後，其他線上的島民看得到你，靠近就能打招呼、猜拳。暱稱會自動過濾不雅字詞。" : "目前是單機模式（尚未連線）。暱稱會自動過濾不雅字詞。";
+    box.appendChild(tip);
+    pvRefresh();
+  }
+
+  // ----- 連線 -----
+  function loadScript(src, ok, fail) {
+    var s = document.createElement("script");
+    s.src = src; s.async = true; s.onload = ok; s.onerror = fail;
+    document.head.appendChild(s);
+  }
+  var pillEl = document.getElementById("on-pill"), pillN = document.getElementById("on-n");
+  function updateCount() {
+    var n = Math.max(1, Object.keys(NET.players).length);
+    if (pillEl) { pillEl.hidden = !NET.on; pillN.textContent = n; }
+  }
+  function onlineStatus() { return "自由逛校園" + (NET.on ? "　島上 " + Math.max(1, Object.keys(NET.players).length) + " 人" : ""); }
+  function myName() { return role ? (role.free ? avNick() : (cleanName(AV.nick, "") || role.name)) : avNick(); }
+  function myCode() {
+    if (!role) return encodeAV(AV);
+    if (role.free) return encodeAV(AV);
+    return "r:" + role.id + ":" + (roleOpt.v || "-") + ":" + roleOpt.sex;
+  }
+  function netInit() {
+    var F = CFG.firebase;
+    if (!F || !F.databaseURL || CFG.online === false) return;
+    var base = "https://www.gstatic.com/firebasejs/9.23.0/";
+    var go = function () {
+      try { firebase.initializeApp(F); NET.db = firebase.database(); netStart(); } catch (e) { console.warn("net", e); }
+    };
+    if (typeof firebase !== "undefined" && firebase.database) { go(); return; }
+    loadScript(base + "firebase-app-compat.js", function () {
+      loadScript(base + "firebase-database-compat.js", go, function () { console.warn("net: 無法載入 firebase-database"); });
+    }, function () { console.warn("net: 無法載入 firebase-app"); });
+  }
+  function netStart() {
+    var db = NET.db;
+    NET.id = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 5);
+    NET.ref = db.ref("players/" + NET.id);
+    db.ref(".info/connected").on("value", function (s) {
+      if (s.val() !== true) { NET.on = false; updateCount(); return; }
+      NET.ref.onDisconnect().remove().then(function () {
+        NET.sent = "";
+        return NET.ref.set({ n: myName(), a: myCode(), v: 0, x: 0, z: 0, r: 0 });
+      }).then(function () { NET.on = true; updateCount(); }).catch(function (e) { console.warn("net", e); });
+    });
+    var P = db.ref("players");
+    P.on("child_added", function (s) { NET.players[s.key] = s.val(); updateCount(); });
+    P.on("child_changed", function (s) { NET.players[s.key] = s.val(); });
+    P.on("child_removed", function (s) {
+      delete NET.players[s.key]; dropRemote(s.key); updateCount();
+      if (rps && rps.d && (rps.d.a === s.key || rps.d.b === s.key)) { var dead = rpsRef(); rpsClose("對方離開了，猜拳結束"); dead.remove(); }
+    });
+    var R = db.ref("rps");
+    R.on("child_added", onRps); R.on("child_changed", onRps);
+    R.on("child_removed", function (s) { if (rps && rps.id === s.key) rpsClose(rps.d && rps.d.st === 2 ? "" : "猜拳結束了"); });
+  }
+
+  // 其他島民的 3D 角色與名牌
+  function num(v, lo, hi, d) { v = Number(v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; }
+  function makeTag(me) {
+    var el = document.createElement("div");
+    el.className = "pl-tag" + (me ? " me" : "");
+    el.innerHTML = '<span class="pl-bub"></span><span class="pl-name"></span>';
+    el.style.display = "none";
+    labelsEl.appendChild(el);
+    return { el: el, bub: el.firstChild, nm: el.lastChild, vec: new THREE.Vector3(), until: 0 };
+  }
+  function ensureRemote(id, p) {
+    var m = NET.meshes[id];
+    if (m && m.code === p.a) return m;
+    if (m) dropRemote(id);
+    var cfg = buildAvatar(p.a);
+    if (!cfg) return null;
+    var mesh = roleApi.makeStudent(cfg.c);
+    roleDeco(mesh, cfg.deco);
+    artApply(mesh.root);
+    var x = num(p.x, -80, 80, 0), z = num(p.z, -80, 80, 0);
+    mesh.root.position.set(x, 0.08, z);
+    var tag = makeTag(false);
+    m = { mesh: mesh, tag: tag, code: p.a, x: x, z: z, yaw: num(p.r, -10, 10, 0), ph: 0, lastE: p.e ? p.e.ts : 0, name: "" };
+    NET.meshes[id] = m;
+    return m;
+  }
+  function dropRemote(id) {
+    var m = NET.meshes[id];
+    if (!m) return;
+    scene.remove(m.mesh.root);
+    if (m.tag.el.parentNode) m.tag.el.parentNode.removeChild(m.tag.el);
+    delete NET.meshes[id];
+    if (NET.nearId === id) NET.nearId = null;
+  }
+  function showBub(tag, txt, ms, now) { tag.bub.textContent = txt; tag.bub.style.display = "block"; tag.until = now + ms; }
+
+  // 面板：靠近別人時出現的互動選單
+  var soEl = document.getElementById("social");
+  function renderSocial(id) {
+    if (!id) { soEl.hidden = true; soEl.innerHTML = ""; return; }
+    var p = NET.players[id] || {};
+    soEl.hidden = false;
+    soEl.innerHTML = '<span class="so-name"></span><span class="so-em"></span><button type="button" class="so-rps">✊✌️✋ 猜拳</button>';
+    soEl.firstChild.textContent = cleanName(p.n, "島民") + " 在旁邊";
+    var em = soEl.querySelector(".so-em");
+    EMOTES.forEach(function (e, i) {
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = e; b.setAttribute("aria-label", "表情" + (i + 1));
+      b.addEventListener("click", function () { sendEmote(i); });
+      em.appendChild(b);
+    });
+    soEl.querySelector(".so-rps").addEventListener("click", function () { startRps(id); });
+  }
+  function sendEmote(i) {
+    if (!NET.on) return;
+    NET.ref.child("e").set({ k: i, ts: firebase.database.ServerValue.TIMESTAMP }).catch(function () {});
+    if (NET.selfEl) showBub(NET.selfEl, EMOTES[i], 3200, performance.now());
+  }
+
+  // ----- 猜拳 -----
+  var rps = null, rpsEl = document.getElementById("rps"), rpsCard = document.getElementById("rps-card");
+  function rpsRef() { return NET.db.ref("rps/" + rps.id); }
+  function startRps(targetId) {
+    if (rps || !NET.on) return;
+    var t = NET.players[targetId];
+    if (!t) return;
+    var ref = NET.db.ref("rps").push();
+    ref.onDisconnect().remove();
+    ref.set({ a: NET.id, b: targetId, an: myName(), bn: cleanName(t.n, "島民"), st: 0, ma: -1, mb: -1, rd: 0 }).catch(function () { toast("猜拳邀請沒有送出，請再試一次"); });
+    setTimeout(function () { ref.once("value", function (s) { var d = s.val(); if (d && d.st === 0) ref.remove(); }); }, 30000);
+  }
+  function onRps(snap) {
+    var d = snap.val();
+    if (!d) return;
+    var mine = d.a === NET.id ? "a" : (d.b === NET.id ? "b" : null);
+    if (!mine) return;
+    if (!rps) rps = { id: snap.key, me: mine, d: d };
+    else if (rps.id !== snap.key) return;
+    rps.d = d;
+    renderRps();
+  }
+  function rpsClose(msg) {
+    rps = null;
+    rpsEl.hidden = true; rpsCard.innerHTML = "";
+    if (msg) toast(msg);
+  }
+  function rpsBtn(txt, cls, fn) {
+    var b = document.createElement("button");
+    b.type = "button"; b.textContent = txt; if (cls) b.className = cls;
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function renderRps() {
+    if (!rps) return;
+    var d = rps.d, me = rps.me, other = cleanName(me === "a" ? d.bn : d.an, "對方"), box = rpsCard, acts, title = document.createElement("h3"), sub = document.createElement("p");
+    box.innerHTML = "";
+    rpsEl.hidden = false;
+    acts = document.createElement("div"); acts.className = "rps-acts";
+    if (d.st === 2) {
+      if (me === "a") { rpsRef().remove(); rpsClose("對方婉拒了猜拳"); } else rpsClose("");
+      return;
+    }
+    if (d.st === 0) {
+      if (me === "a") {
+        title.textContent = "等待 " + other + " 回應…"; sub.textContent = "對方按下接受後就開始。";
+        acts.appendChild(rpsBtn("取消", "", function () { rpsRef().remove(); }));
+      } else {
+        title.textContent = other + " 邀你猜拳！"; sub.textContent = "要接受嗎？";
+        acts.appendChild(rpsBtn("接受", "go", function () { rpsRef().update({ st: 1 }); }));
+        acts.appendChild(rpsBtn("拒絕", "", function () { rpsRef().update({ st: 2 }); }));
+      }
+    } else {
+      var mine = me === "a" ? d.ma : d.mb, theirs = me === "a" ? d.mb : d.ma;
+      if (mine < 0) {
+        title.textContent = "和 " + other + " 猜拳"; sub.textContent = "第 " + ((d.rd || 0) + 1) + " 局：出拳！";
+        [0, 1, 2].forEach(function (k) {
+          var b = rpsBtn(RPS_ICON[k], "rps-hand", function () { var o = {}; o[me === "a" ? "ma" : "mb"] = k; rpsRef().update(o); });
+          acts.appendChild(b);
+        });
+      } else if (theirs < 0) {
+        title.textContent = "你出了 " + RPS_ICON[mine]; sub.textContent = "等 " + other + " 出拳…";
+      } else {
+        var res = (mine - theirs + 3) % 3;
+        title.textContent = res === 2 ? "你贏了！🎉" : res === 1 ? "你輸了…" : "平手！";
+        sub.textContent = "你 " + RPS_ICON[mine] + "　vs　" + RPS_ICON[theirs] + " " + other;
+        acts.appendChild(rpsBtn("再來一局", "go", function () { rpsRef().update({ ma: -1, mb: -1, rd: (d.rd || 0) + 1 }); }));
+      }
+      acts.appendChild(rpsBtn("結束", "", function () { rpsRef().remove(); }));
+    }
+    box.appendChild(title); box.appendChild(sub); box.appendChild(acts);
+  }
+
+  // 每一幀：送出自己的位置、更新別人的角色、名牌、互動面板
+  function onlineUpdate(dt, now) {
+    if (!NET.on) return;
+    var w = window.innerWidth, h = window.innerHeight, id, i;
+    var vis = !!(role && playerPos);
+    if (now - NET.lastSend > 250) {
+      var st = vis ? { n: myName(), a: myCode(), v: 1, x: Math.round(playerPos.x * 100) / 100, z: Math.round(playerPos.z * 100) / 100, r: Math.round(Math.atan2(Math.sin(playerYaw), Math.cos(playerYaw)) * 100) / 100 }
+                   : { n: myName(), a: myCode(), v: 0 };
+      var key = JSON.stringify(st);
+      if (key !== NET.sent) { NET.sent = key; NET.lastSend = now; NET.ref.update(st).catch(function () {}); }
+    }
+    // 其他島民
+    var k = Math.min(1, dt * 7);
+    for (id in NET.players) {
+      if (id === NET.id) continue;
+      var p = NET.players[id], m;
+      if (!p || p.v !== 1) { if (NET.meshes[id]) dropRemote(id); continue; }
+      m = ensureRemote(id, p);
+      if (!m) continue;
+      var tx = num(p.x, -80, 80, m.x), tz = num(p.z, -80, 80, m.z), ty = num(p.r, -10, 10, m.yaw);
+      var ddx = tx - m.x, ddz = tz - m.z, dist = Math.hypot(ddx, ddz);
+      if (dist > 6) { m.x = tx; m.z = tz; dist = 0; }
+      else { m.x += ddx * k; m.z += ddz * k; }
+      var dy = Math.atan2(Math.sin(ty - m.yaw), Math.cos(ty - m.yaw));
+      m.yaw += dy * Math.min(1, dt * 8);
+      var moving = dist > 0.03, mm = m.mesh;
+      if (moving) {
+        m.ph += dt * 10;
+        var sw = Math.sin(m.ph) * 0.6;
+        mm.legL.rotation.x = sw; mm.legR.rotation.x = -sw; mm.armL.rotation.x = -sw * 0.85; mm.armR.rotation.x = sw * 0.85;
+        mm.root.position.y = 0.08 + Math.abs(Math.sin(m.ph)) * 0.02;
+      } else {
+        mm.legL.rotation.x *= 0.8; mm.legR.rotation.x *= 0.8; mm.armL.rotation.x *= 0.8; mm.armR.rotation.x *= 0.8;
+        mm.root.position.y = 0.08;
+      }
+      mm.root.position.x = m.x; mm.root.position.z = m.z; mm.root.rotation.y = m.yaw;
+      var nm = cleanName(p.n, "島民");
+      if (m.name !== nm) { m.name = nm; m.tag.nm.textContent = nm; }
+      if (p.e && p.e.ts !== m.lastE) { m.lastE = p.e.ts; var ei = num(p.e.k, 0, EMOTES.length - 1, 0) | 0; showBub(m.tag, EMOTES[ei], 3200, now); }
+      m.tag.vec.set(m.x, 0.98, m.z);
+    }
+    // 名牌
+    for (id in NET.meshes) {
+      var mt = NET.meshes[id];
+      if (mt.tag.until && now > mt.tag.until) { mt.tag.until = 0; mt.tag.bub.style.display = "none"; }
+      place(mt.tag.el, mt.tag.vec, w, h);
+      if (camera.position.distanceTo(mt.tag.vec) > 30) mt.tag.el.style.display = "none";
+    }
+    if (!NET.selfEl) { NET.selfEl = makeTag(true); }
+    var se = NET.selfEl;
+    if (vis && !roleFP) {
+      se.nm.textContent = myName();
+      se.vec.set(playerPos.x, 0.98, playerPos.z);
+      if (se.until && now > se.until) { se.until = 0; se.bub.style.display = "none"; }
+      place(se.el, se.vec, w, h);
+    } else se.el.style.display = "none";
+    // 附近有人 → 顯示互動選單
+    var best = null, bd = 1.4;
+    if (vis && !rps) {
+      for (id in NET.meshes) { var d2 = Math.hypot(NET.meshes[id].x - playerPos.x, NET.meshes[id].z - playerPos.z); if (d2 < bd) { bd = d2; best = id; } }
+    }
+    if (best !== NET.nearId) { NET.nearId = best; renderSocial(best); }
+  }
+
+  netInit();
+
   window.__ld&&__ld(88,"校園就緒");
   var last = performance.now(), __fr = 0;
   function tick(now) {
@@ -4330,6 +4752,7 @@ var CFG = window.NANNAN_CONFIG || {};
     artUpdate(now * 0.001);
     try { updateRole(dt, now); } catch (err2) { if (!window.__roleErr) { window.__roleErr = 1; console.error(err2); } }
     if (!(roleMode && roleFP)) controls.update();
+    try { onlineUpdate(dt, now); } catch (err3) { if (!window.__netErr) { window.__netErr = 1; console.error(err3); } }
     updateLabels();
     renderer.render(scene, camera);
     if (++__fr === 10 && window.__ldDone) { clearTimeout(window.__ldTimer); window.__ldDone(); }
