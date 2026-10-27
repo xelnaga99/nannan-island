@@ -1236,7 +1236,7 @@ var CFG = window.NANNAN_CONFIG || {};
     frontBrickWall(2.4, 6.85);
 
     // 人車分流：校門西側是行人通道（綠色），東側是車道；中間用護欄與警示柱隔開
-    box(1.2, 0.01, 1.7, std(0x8fbf7a, 0.95), -1.2, 0.06, 8.85, gateGroup);
+    box(1.2, 0.01, 1.7, std(0x8fbf7a, 0.95), -1.2, 0.072, 8.85, gateGroup);
     scene.add(gateGroup);
   })();
 
@@ -3021,7 +3021,7 @@ var CFG = window.NANNAN_CONFIG || {};
     rhEls.wrap.hidden = false;
     document.getElementById("rolekeys").hidden = false;
     document.getElementById("joy").hidden = false;
-    toast("跟著他過一天！想自己走可按「自己操控」");
+    toast(r.free ? "用 W A S D 或方向鍵移動、Shift 跑步；手機用左下角搖桿" : "跟著他過一天！想自己走可按「自己操控」");
   }
   function endRole(msg) {
     if (!role) return;
@@ -3059,10 +3059,24 @@ var CFG = window.NANNAN_CONFIG || {};
   // 輸入
   window.addEventListener("keydown", function (e) {
     if (!roleMode) return;
-    keys[e.code] = true;
-    if (e.code.indexOf("Arrow") === 0 || e.code === "Space") e.preventDefault();
+    var c = keyCodeOf(e);
+    if (!c) return;
+    keys[c] = true;
+    if (c.indexOf("Arrow") === 0 || c === "Space") e.preventDefault();
   });
-  window.addEventListener("keyup", function (e) { keys[e.code] = false; });
+  window.addEventListener("keyup", function (e) { var c = keyCodeOf(e); if (c) keys[c] = false; });
+  window.addEventListener("blur", function () { keys = {}; });
+  // 部分輸入法會讓 e.code 為空，改用 e.key／keyCode 對應
+  function keyCodeOf(e) {
+    if (e.code) return e.code;
+    var k = String(e.key || "").toLowerCase(), kc = e.keyCode;
+    if (k === "w" || kc === 87) return "KeyW"; if (k === "a" || kc === 65) return "KeyA";
+    if (k === "s" || kc === 83) return "KeyS"; if (k === "d" || kc === 68) return "KeyD";
+    if (k === "arrowup" || kc === 38) return "ArrowUp"; if (k === "arrowdown" || kc === 40) return "ArrowDown";
+    if (k === "arrowleft" || kc === 37) return "ArrowLeft"; if (k === "arrowright" || kc === 39) return "ArrowRight";
+    if (k === "shift" || kc === 16) return "ShiftLeft";
+    return "";
+  }
   (function () {
     var joyEl = document.getElementById("joy"), knob = document.getElementById("joy-knob"), act = false;
     function setFrom(ev) {
