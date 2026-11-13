@@ -2526,7 +2526,7 @@ var CFG = window.NANNAN_CONFIG || {};
   var pointer = new THREE.Vector2();
   var downX = 0, downY = 0;
 
-  function pick(ev) {
+  function pickPin(ev) {
     var rect = canvas.getBoundingClientRect();
     pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
@@ -2538,7 +2538,8 @@ var CFG = window.NANNAN_CONFIG || {};
   canvas.addEventListener("pointerdown", function (ev) { downX = ev.clientX; downY = ev.clientY; });
   canvas.addEventListener("pointerup", function (ev) {
     if (Math.hypot(ev.clientX - downX, ev.clientY - downY) > 6) return;
-    var hitId = pick(ev);
+    if (typeof boardHit === "function" && boardHit(ev)) return;
+    var hitId = pickPin(ev);
     if (hitId) openHotspot(hitId);
   });
 
@@ -2586,7 +2587,7 @@ var CFG = window.NANNAN_CONFIG || {};
 
   // ---------- 16-3. 時間系統（0:00 → 24:00）----------
   // 天色、光線、日月星辰、夜間窗燈與鐘塔指針全部由 timeOfDay（小時，0–24）推算
-  var timeOfDay = (function () { var d = new Date(); return d.getHours() + d.getMinutes() / 60; })();
+  var timeOfDay = 6; // 進站預設從早上 6:00 開始（按「現在」可跳到真實時間）
   var timePlaying = true, timeSpeed = 4, DAY_SECONDS = 600; // 預設 4×：現實 2.5 分鐘 = 一天
 
   var moonLight = new THREE.DirectionalLight(0x9db4ff, 0);
@@ -3953,6 +3954,25 @@ var CFG = window.NANNAN_CONFIG || {};
     chip.textContent = "📍 尋寶打卡 " + n + "/" + TREASURE_IDS.length + "　（點我看任務）";
   }
 
+  // 全部完成後可以重新開始：清除打卡、投籃、衝刺紀錄（按兩次確認，避免誤按）
+  function addRestartBtn(row, after) {
+    var rb = mk("button", "gm-btn alt", "🔄 重新開始任務", row), armed = false, timer = 0;
+    rb.type = "button";
+    rb.addEventListener("click", function () {
+      if (!armed) {
+        armed = true; rb.textContent = "再按一次確認（紀錄會清除）";
+        timer = setTimeout(function () { armed = false; rb.textContent = "🔄 重新開始任務"; }, 4000);
+        return;
+      }
+      clearTimeout(timer);
+      MS.treasure = {}; MS.hoops = 0; MS.rush = 0; saveMS();
+      treasureOn = false; updateChip();
+      toast("任務已重新開始，再玩一次吧！");
+      after();
+    });
+    return rb;
+  }
+
   function openMissions() {
     closePanel && closePanel();
     var n = treasureCount(), tot = TREASURE_IDS.length;
@@ -3972,6 +3992,7 @@ var CFG = window.NANNAN_CONFIG || {};
     mission("🏃", "遲到衝刺", "開學日 7:50！在時間內跑進教室，小心來往車輛，被撞到會扣 5 秒。", MS.rush >= 1, "開始衝刺", function () { gmMis.hidden = true; pick.rush = true; openPicker(true); });
     var row = mk("div", "gm-row", "", card);
     if (allDone()) { var pb = mk("button", "gm-btn", "🎫 領取通行證", row); pb.type = "button"; pb.addEventListener("click", function () { gmMis.hidden = true; showPass(); }); }
+    if (allDone()) addRestartBtn(row, openMissions);
     var cb = mk("button", "gm-btn alt", "關閉", row); cb.type = "button"; cb.addEventListener("click", function () { gmMis.hidden = true; });
     gmMis.hidden = false;
   }
@@ -4220,6 +4241,7 @@ var CFG = window.NANNAN_CONFIG || {};
     var row = mk("div", "gm-row", "", card);
     var d = mk("button", "gm-btn", "下載圖片", row); d.type = "button";
     d.addEventListener("click", function () { try { var a = document.createElement("a"); a.download = "楠楠島通行證.png"; a.href = cv.toDataURL("image/png"); a.click(); } catch (e) { toast("無法下載，請長按圖片儲存"); } });
+    addRestartBtn(row, function () { gmPass.hidden = true; openMissions(); });
     var cl = mk("button", "gm-btn alt", "關閉", row); cl.type = "button";
     cl.addEventListener("click", function () { gmPass.hidden = true; });
     gmPass.hidden = false;
@@ -4718,6 +4740,156 @@ var CFG = window.NANNAN_CONFIG || {};
   }
 
   netInit();
+
+  // ---------- 25. 校門口公佈欄：國中蓋章票選 ----------
+  var SCHOOLS = [
+    { k: "s0", n: "左營國中", c: "#d6453a" }, { k: "s1", n: "岡山國中", c: "#2f6fb5" }, { k: "s2", n: "蚵寮國中", c: "#1f9e55" },
+    { k: "s3", n: "翠屏國中小", c: "#7c5cf0" }, { k: "s4", n: "大社國中", c: "#e0803a" }, { k: "s5", n: "燕巢國中", c: "#16a39a" }, { k: "s6", n: "後勁國中", c: "#8a5a3b" }
+  ];
+  var ANIMALS = [["🦁", "獅子"], ["🐰", "兔子"], ["🐵", "猴子"], ["🐯", "老虎"], ["🐼", "熊貓"], ["🦊", "狐狸"], ["🐶", "小狗"], ["🐱", "小貓"], ["🐧", "企鵝"], ["🐻", "小熊"]];
+  var BD_LIMIT = Math.max(0, Number(CFG.boardLimit) || 0), BD_SHOW = 40;
+  var boardPick = [], bd = { stamps: {}, counts: {}, sel: 0, sub: false, fresh: {}, last: 0, open: false, cols: {} };
+  SCHOOLS.forEach(function (s) { bd.stamps[s.k] = []; bd.counts[s.k] = 0; });
+
+  // 3D 公佈欄：立在大門右側圍牆外的人行道上
+  (function () {
+    var g = new THREE.Group(), bx = 4.2, bz = 8.98, cv = document.createElement("canvas"), c = cv.getContext("2d");
+    cv.width = 512; cv.height = 340;
+    c.fillStyle = "#3f7d5b"; c.fillRect(0, 0, 512, 340);
+    c.fillStyle = "#fffaf0"; c.fillRect(120, 14, 272, 58);
+    c.fillStyle = "#ba533c"; c.font = "bold 40px sans-serif"; c.textAlign = "center"; c.fillText("📌 公佈欄", 256, 56);
+    var notes = [[24, 96, 150, 110, "#ffe27a", -4], [190, 100, 140, 100, "#ffb3a7", 3], [350, 94, 140, 112, "#a9d8ff", -2]], i;
+    for (i = 0; i < notes.length; i++) {
+      var n = notes[i]; c.save(); c.translate(n[0] + n[2] / 2, n[1] + n[3] / 2); c.rotate(n[5] * Math.PI / 180);
+      c.fillStyle = n[4]; c.fillRect(-n[2] / 2, -n[3] / 2, n[2], n[3]);
+      c.fillStyle = "#c0392b"; c.beginPath(); c.arc(0, -n[3] / 2 + 8, 6, 0, 7); c.fill(); c.restore();
+    }
+    c.font = "54px sans-serif"; c.fillText("🦁", 100, 175); c.fillText("🐰", 260, 175); c.fillText("🐵", 420, 175);
+    c.fillStyle = "#fffaf0"; c.font = "bold 28px sans-serif"; c.fillText("國中蓋章票選", 256, 300);
+    var tex = new THREE.CanvasTexture(cv);
+    var wood = std(0x9a6a43, 0.9), woodDk = std(0x6f4a2d, 0.9);
+    box(0.06, 1.0, 0.06, wood, bx - 0.52, 0.5, bz - 0.03, g);
+    box(0.06, 1.0, 0.06, wood, bx + 0.52, 0.5, bz - 0.03, g);
+    var frame = box(1.22, 0.8, 0.05, woodDk, bx, 0.82, bz, g);
+    box(1.34, 0.05, 0.16, wood, bx, 1.27, bz, g);
+    var face = new THREE.Mesh(new THREE.PlaneGeometry(1.12, 0.74), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }));
+    face.position.set(bx, 0.82, bz + 0.03);
+    g.add(face);
+    boardPick.push(face, frame);
+    scene.add(g);
+    artApply(g);
+  })();
+  addTag("公佈欄", 4.2, 1.5, 8.98, false, true);
+
+  function boardHit(ev) {
+    var rect = canvas.getBoundingClientRect();
+    pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    if (!raycaster.intersectObjects(boardPick, false)[0]) return false;
+    openBoard();
+    return true;
+  }
+
+  // 資料：連線時存在 Firebase（所有人共用），沒連線時只存在這台裝置
+  function bdLocalLoad() { try { var o = JSON.parse(localStorage.getItem("nannan-board-local") || "null"); if (o) SCHOOLS.forEach(function (s) { if (Array.isArray(o[s.k])) { bd.stamps[s.k] = o[s.k].slice(-BD_SHOW); bd.counts[s.k] = o[s.k].length; } }); } catch (e) {} }
+  function bdLocalSave(all) { try { localStorage.setItem("nannan-board-local", JSON.stringify(all)); } catch (e) {} }
+  var bdLocalAll = {};
+  function bdSubscribe() {
+    if (bd.sub) return;
+    if (!NET.db) { bd.sub = true; bdLocalLoad(); SCHOOLS.forEach(function (s) { bdLocalAll[s.k] = (bd.stamps[s.k] || []).slice(); }); return; }
+    bd.sub = true;
+    SCHOOLS.forEach(function (s) {
+      NET.db.ref("board/" + s.k).limitToLast(BD_SHOW).on("child_added", function (snap) {
+        var v = snap.val() || {};
+        bd.stamps[s.k].push({ id: snap.key, s: num(v.s, 0, ANIMALS.length - 1, 0) | 0, x: num(v.x, 0, 1, 0.5), y: num(v.y, 0, 1, 0.5) });
+        if (bd.stamps[s.k].length > BD_SHOW) bd.stamps[s.k].shift();
+        bdDraw(s.k);
+      });
+      NET.db.ref("boardCount/" + s.k).on("value", function (snap) { bd.counts[s.k] = Number(snap.val()) || 0; bdDraw(s.k); });
+    });
+  }
+  function bdDay() { var d = new Date(); return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate(); }
+  function bdUsed() { try { var o = JSON.parse(localStorage.getItem("nannan-board-day") || "null"); return o && o.d === bdDay() ? o.n : 0; } catch (e) { return 0; } }
+  function bdUse() { try { localStorage.setItem("nannan-board-day", JSON.stringify({ d: bdDay(), n: bdUsed() + 1 })); } catch (e) {} }
+
+  function bdStamp(school, x, y) {
+    var now = Date.now();
+    if (now - bd.last < 700) return;
+    if (BD_LIMIT > 0 && bdUsed() >= BD_LIMIT) { toast("今天已經蓋了 " + BD_LIMIT + " 次囉，明天再來！"); return; }
+    bd.last = now;
+    var rec = { s: bd.sel, x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 };
+    bdUse();
+    if (NET.db) {
+      var ref = NET.db.ref("board/" + school.k).push();
+      bd.fresh[ref.key] = 1;
+      ref.set(rec).catch(function () { toast("蓋章沒有成功，請再試一次"); });
+      NET.db.ref("boardCount/" + school.k).transaction(function (n) { return (Number(n) || 0) + 1; });
+    } else {
+      rec.id = "L" + now; bd.fresh[rec.id] = 1;
+      bd.stamps[school.k].push(rec); if (bd.stamps[school.k].length > BD_SHOW) bd.stamps[school.k].shift();
+      bd.counts[school.k]++;
+      bdLocalAll[school.k] = (bdLocalAll[school.k] || []).concat([rec]);
+      bdLocalSave(bdLocalAll);
+      bdDraw(school.k);
+    }
+    toast("蓋章成功！" + ANIMALS[bd.sel][0] + " 為" + school.n + "投下一票");
+    bdUpdateLeft();
+  }
+  function bdUpdateLeft() { if (bd.leftEl) bd.leftEl.textContent = BD_LIMIT > 0 ? "今天還能蓋 " + Math.max(0, BD_LIMIT - bdUsed()) + " 次" : "同一台裝置可以重複蓋章"; }
+  function bdDraw(k) {
+    var col = bd.cols[k];
+    if (!bd.open || !col) return;
+    col.count.textContent = "共 " + bd.counts[k] + " 枚";
+    col.paper.innerHTML = "";
+    bd.stamps[k].forEach(function (st) {
+      var e = document.createElement("div"), sc = SCHOOLS.filter(function (s) { return s.k === k; })[0];
+      e.className = "bd-stamp" + (bd.fresh[st.id] ? " fresh" : "");
+      e.textContent = ANIMALS[st.s][0];
+      e.style.left = (st.x * 100) + "%"; e.style.top = (st.y * 100) + "%";
+      e.style.setProperty("--c", sc.c); e.style.setProperty("--r", (((st.x * 1000 + st.y * 777) % 24) - 12) + "deg");
+      col.paper.appendChild(e);
+    });
+    bd.fresh = {};
+  }
+  var gmBoard = mk("div", "gm-overlay", "", document.body); gmBoard.hidden = true;
+  function openBoard() {
+    closePanel && closePanel();
+    bdSubscribe();
+    bd.open = true;
+    gmBoard.innerHTML = ""; bd.cols = {};
+    var card = mk("div", "gm-card bd-card", "", gmBoard);
+    mk("h2", "", "📌 楠楠島公佈欄：國中蓋章票選", card);
+    mk("p", "gm-sub", "你是哪一所國中的學生？選一個動物印章，在自己學校的欄位點一下蓋下去，幫母校投一票！", card);
+    var pr = mk("div", "bd-stamps", "", card);
+    ANIMALS.forEach(function (a, i) {
+      var b = mk("button", "bd-pick" + (i === bd.sel ? " sel" : ""), "<b>" + a[0] + "</b>" + a[1], pr);
+      b.type = "button";
+      b.addEventListener("click", function () { bd.sel = i; Array.prototype.forEach.call(pr.children, function (x, j) { x.className = "bd-pick" + (j === i ? " sel" : ""); }); });
+    });
+    var grid = mk("div", "bd-cols", "", card);
+    SCHOOLS.forEach(function (s) {
+      var col = mk("div", "bd-col", "", grid);
+      col.style.setProperty("--c", s.c);
+      mk("div", "bd-name", s.n, col);
+      var cnt = mk("div", "bd-count", "共 0 枚", col);
+      var paper = mk("div", "bd-paper", "", col);
+      mk("div", "bd-hint", "點這裡蓋章", col);
+      paper.addEventListener("click", function (ev) {
+        var r = paper.getBoundingClientRect();
+        bdStamp(s, Math.min(0.92, Math.max(0.08, (ev.clientX - r.left) / r.width)), Math.min(0.92, Math.max(0.08, (ev.clientY - r.top) / r.height)));
+      });
+      bd.cols[s.k] = { paper: paper, count: cnt };
+    });
+    var row = mk("div", "gm-row", "", card);
+    bd.leftEl = mk("span", "bd-left", "", row);
+    var cl = mk("button", "gm-btn alt", "關閉", row); cl.type = "button";
+    cl.addEventListener("click", function () { bd.open = false; gmBoard.hidden = true; });
+    mk("div", "bd-note", NET.db ? "所有玩家的印章會即時出現在這裡。" : "目前是單機模式：印章只會存在這台裝置。", card);
+    gmBoard.hidden = false;
+    bdUpdateLeft();
+    SCHOOLS.forEach(function (s) { bdDraw(s.k); });
+  }
 
   window.__ld&&__ld(88,"校園就緒");
   var last = performance.now(), __fr = 0;

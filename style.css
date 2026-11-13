@@ -343,3 +343,24 @@
   .rp-sw.sel { border-color: var(--ink); box-shadow: 0 0 0 2px #fff inset; }
   .rp-nick { flex: 1; min-width: 140px; border: 1.5px solid rgba(29,51,71,0.25); border-radius: 999px; padding: 5px 12px; font: inherit; color: var(--ink); }
   .rp-tip { font-size: 11.5px; opacity: .7; }
+
+  /* ---- 公佈欄 ---- */
+  .bd-card { width: min(1000px, 100%); }
+  .bd-stamps { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+  .bd-pick { display: flex; align-items: center; gap: 4px; border: 2px solid rgba(29,51,71,0.18); background: #fff; border-radius: 14px; padding: 3px 10px; font: inherit; font-size: 13px; color: var(--ink); cursor: pointer; }
+  .bd-pick b { font-size: 22px; font-weight: 400; }
+  .bd-pick.sel { border-color: var(--brick); background: #fff1ea; font-weight: 700; }
+  .bd-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 10px; }
+  .bd-col { background: #f7f1e6; border-radius: 12px; padding: 8px 8px 6px; border-top: 6px solid var(--c); }
+  .bd-name { font-weight: 800; font-size: 15px; color: var(--c); }
+  .bd-count { font-size: 12px; opacity: 0.7; margin-bottom: 5px; }
+  .bd-paper { position: relative; height: 190px; border-radius: 8px; overflow: hidden; cursor: pointer; touch-action: manipulation;
+    background: repeating-linear-gradient(0deg, #fffdf6, #fffdf6 22px, #efe6d3 23px); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
+  .bd-paper:hover { box-shadow: inset 0 0 0 2px var(--c); }
+  .bd-hint { text-align: center; font-size: 11px; opacity: 0.55; margin-top: 4px; }
+  .bd-stamp { position: absolute; width: 38px; height: 38px; border-radius: 50%; border: 3px solid var(--c); display: grid; place-items: center; font-size: 21px; line-height: 1;
+    background: rgba(255,255,255,0.7); box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px var(--c); pointer-events: none; transform: translate(-50%, -50%) rotate(var(--r)); }
+  .bd-stamp.fresh { animation: bdThud .45s cubic-bezier(.2,1.5,.4,1); }
+  @keyframes bdThud { 0% { transform: translate(-50%, -50%) rotate(var(--r)) scale(2.4); opacity: 0; } 100% { transform: translate(-50%, -50%) rotate(var(--r)) scale(1); opacity: 1; } }
+  .bd-left { font-size: 13px; font-weight: 700; align-self: center; margin-right: auto; }
+  .bd-note { margin-top: 8px; font-size: 12px; opacity: 0.65; }

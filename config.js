@@ -6,6 +6,8 @@ window.NANNAN_CONFIG = {
   // 例：firebase: { apiKey: "...", authDomain: "...", databaseURL: "https://xxx-default-rtdb.asia-southeast1.firebasedatabase.app", projectId: "...", appId: "..." },
   firebase: { databaseURL: "https://nannan-island-default-rtdb.asia-southeast1.firebasedatabase.app" },
   online: true,
+  // 公佈欄：每個裝置每天最多可蓋幾次章（0 = 不限次數，適合共用平板）
+  boardLimit: 0,
   // 背景音樂（mp3）。白天 06:00–18:00 播 day，其餘播 night，轉換時漸入漸出。
   music: {
     day: "day.mp3",
